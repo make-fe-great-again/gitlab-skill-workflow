@@ -1,12 +1,10 @@
 ---
 name: git-workflow
-description: Multi-platform Git workflow for GitHub and GitLab: review changes, generate commit messages, push to remote, and create/update PRs/MRs with custom templates
+description: Multi-platform Git workflow for GitHub and GitLab. Use when you need to review code changes, generate conventional commit messages, push to remote, and create or update Pull Requests (GitHub) or Merge Requests (GitLab). Triggers on tasks involving git commit, git push, PR creation, MR creation, code review, or workflow automation.
 license: MIT
-compatibility: opencode
 metadata:
-  audience: developers
-  workflow: github,gitlab
-  tools: git, gh, glab
+  author: make-fe-great-again
+  version: "1.0.0"
 ---
 
 ## What I do
