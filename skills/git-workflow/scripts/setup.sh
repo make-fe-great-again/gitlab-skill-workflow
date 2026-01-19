@@ -306,10 +306,171 @@ detect_platform() {
     fi
 }
 
+# 获取仓库 URL（用于浏览器创建 PR/MR）
+get_repo_url() {
+    local remote="$1"
+    # 转换 SSH URL 为 HTTPS URL
+    if [[ "$remote" == git@* ]]; then
+        # git@github.com:user/repo.git -> https://github.com/user/repo
+        echo "$remote" | sed -E 's|git@([^:]+):|https://\1/|; s|\.git$||'
+    else
+        # 已经是 HTTPS URL
+        echo "$remote" | sed 's|\.git$||'
+    fi
+}
+
+# 引导 GitHub 认证
+guide_github_auth() {
+    local remote="$1"
+    local repo_url
+    repo_url=$(get_repo_url "$remote")
+    
+    log_info "Detected GitHub repository"
+    echo ""
+    
+    if ! command_exists gh; then
+        log_warning "GitHub CLI (gh) not installed"
+        echo ""
+        log_info "Without gh CLI, you need to create PRs manually in browser:"
+        echo "  $repo_url/pull/new/BRANCH_NAME"
+        echo ""
+        return
+    fi
+    
+    if check_gh_auth; then
+        log_success "Already authenticated with GitHub"
+        echo ""
+        return
+    fi
+    
+    log_warning "Not authenticated with GitHub"
+    echo ""
+    
+    ask_choice "How would you like to create Pull Requests?" \
+        "Login with gh CLI (recommended)" \
+        "Create PRs manually in browser" \
+        "Skip for now"
+    
+    local choice=$?
+    echo ""
+    
+    case $choice in
+        1)
+            log_step "Starting GitHub authentication..."
+            gh auth login
+            if check_gh_auth; then
+                log_success "GitHub authentication successful!"
+            else
+                log_warning "Authentication was not completed"
+                log_info "You can run 'gh auth login' later"
+            fi
+            ;;
+        2)
+            log_info "To create PRs manually:"
+            echo "  1. Push your branch: git push origin BRANCH_NAME"
+            echo "  2. Visit: $repo_url/pull/new/BRANCH_NAME"
+            ;;
+        3)
+            log_info "Skipped. Run 'gh auth login' when ready"
+            ;;
+    esac
+    echo ""
+}
+
+# 引导 GitLab 认证
+guide_gitlab_auth() {
+    local remote="$1"
+    local repo_url
+    repo_url=$(get_repo_url "$remote")
+    local hostname
+    hostname=$(echo "$remote" | sed -E 's|.*@([^:/]+)[:/].*|\1|; s|.*://([^/]+)/.*|\1|')
+    
+    log_info "Detected GitLab repository"
+    if [[ "$hostname" != "gitlab.com" ]]; then
+        log_info "Self-hosted instance: $hostname"
+    fi
+    echo ""
+    
+    # GitLab 有 git push -o 替代方案，所以即使没有 glab 也可以
+    if ! command_exists glab; then
+        log_info "GitLab CLI (glab) not installed"
+        echo ""
+        log_info "You can create MRs without glab using git push options:"
+        echo "  git push -o merge_request.create -o merge_request.target=main origin BRANCH"
+        echo ""
+        log_info "Or create MRs manually in browser:"
+        echo "  $repo_url/-/merge_requests/new"
+        echo ""
+        return
+    fi
+    
+    if check_glab_auth; then
+        log_success "Already authenticated with GitLab"
+        echo ""
+        return
+    fi
+    
+    log_warning "Not authenticated with GitLab"
+    echo ""
+    
+    ask_choice "How would you like to create Merge Requests?" \
+        "Login with glab CLI (full features)" \
+        "Use git push -o (no auth needed)" \
+        "Create MRs manually in browser" \
+        "Skip for now"
+    
+    local choice=$?
+    echo ""
+    
+    case $choice in
+        1)
+            log_step "Starting GitLab authentication..."
+            if [[ "$hostname" != "gitlab.com" ]]; then
+                glab auth login --hostname "$hostname"
+            else
+                glab auth login
+            fi
+            if check_glab_auth; then
+                log_success "GitLab authentication successful!"
+            else
+                log_warning "Authentication was not completed"
+                log_info "You can run 'glab auth login' later"
+            fi
+            ;;
+        2)
+            log_success "Great choice! No additional setup needed."
+            echo ""
+            log_info "To create MRs with push options:"
+            echo "  git push -o merge_request.create \\"
+            echo "           -o merge_request.target=main \\"
+            echo "           -o \"merge_request.title=Your MR Title\" \\"
+            echo "           origin BRANCH_NAME"
+            echo ""
+            log_info "Available options:"
+            echo "  -o merge_request.create              - Create MR"
+            echo "  -o merge_request.target=<branch>     - Target branch"
+            echo "  -o merge_request.title=\"<title>\"     - MR title"
+            echo "  -o merge_request.description=\"<desc>\"- MR description"
+            echo "  -o merge_request.draft               - Mark as draft"
+            echo "  -o merge_request.merge_when_pipeline_succeeds"
+            echo "  -o merge_request.remove_source_branch"
+            ;;
+        3)
+            log_info "To create MRs manually:"
+            echo "  1. Push your branch: git push origin BRANCH_NAME"
+            echo "  2. Visit: $repo_url/-/merge_requests/new"
+            ;;
+        4)
+            log_info "Skipped. You can use 'git push -o' or 'glab auth login' later"
+            ;;
+    esac
+    echo ""
+}
+
 # 引导用户认证
 guide_authentication() {
     separator "="
-    log_step "Authentication Status"
+    log_step "Authentication Setup"
     separator "="
     echo ""
     
@@ -320,59 +481,17 @@ guide_authentication() {
     
     case "$platform" in
         github)
-            log_info "Detected GitHub repository"
-            echo ""
-            if command_exists gh; then
-                if check_gh_auth; then
-                    log_success "Already authenticated with GitHub"
-                else
-                    log_warning "Not authenticated with GitHub"
-                    echo "  Run: gh auth login"
-                fi
-            else
-                log_warning "GitHub CLI (gh) not installed"
-            fi
-            echo ""
+            guide_github_auth "$remote"
             ;;
         gitlab)
-            log_info "Detected GitLab repository"
-            echo ""
-            if command_exists glab; then
-                if check_glab_auth; then
-                    log_success "Already authenticated with GitLab"
-                else
-                    log_warning "Not authenticated with GitLab"
-                    echo "  Run: glab auth login"
-                    # 检测是否为自托管实例
-                    if [[ "$remote" != *"gitlab.com"* ]]; then
-                        local hostname
-                        hostname=$(echo "$remote" | sed -E 's|.*@([^:/]+)[:/].*|\1|; s|.*://([^/]+)/.*|\1|')
-                        echo "  For self-hosted: glab auth login --hostname $hostname"
-                    fi
-                fi
-            else
-                log_warning "GitLab CLI (glab) not installed"
-            fi
-            echo ""
+            guide_gitlab_auth "$remote"
             ;;
         *)
             log_info "Platform not detected from remote URL"
             echo ""
-            # 显示两个平台的认证状态
-            if command_exists gh; then
-                if check_gh_auth; then
-                    log_success "GitHub: Authenticated"
-                else
-                    echo "  GitHub: gh auth login"
-                fi
-            fi
-            if command_exists glab; then
-                if check_glab_auth; then
-                    log_success "GitLab: Authenticated"
-                else
-                    echo "  GitLab: glab auth login"
-                fi
-            fi
+            log_info "Please authenticate with your platform when needed:"
+            echo "  - GitHub: gh auth login"
+            echo "  - GitLab: glab auth login (or use git push -o)"
             echo ""
             ;;
     esac
@@ -385,17 +504,21 @@ show_completion() {
     separator "="
     echo ""
     
-    log_info "All dependencies are now installed."
+    log_info "You're all set to use the git-workflow skill."
     echo ""
     
-    log_step "Next steps:"
-    echo "  • Authenticate with your platform:"
-    echo "    - GitHub: gh auth login"
-    echo "    - GitLab: glab auth login"
+    log_step "Quick reference:"
     echo ""
-    echo "  • Run the skill:"
-    echo "    skill({ name: 'git-workflow' })"
+    echo "  GitHub PRs:"
+    echo "    gh pr create --title \"...\" --body \"...\" --base main"
     echo ""
+    echo "  GitLab MRs (Option 1 - push options):"
+    echo "    git push -o merge_request.create -o merge_request.target=main origin BRANCH"
+    echo ""
+    echo "  GitLab MRs (Option 2 - glab CLI):"
+    echo "    glab mr create --title \"...\" --target-branch main"
+    echo ""
+    
     log_info "For more information, see the documentation:"
     echo "  https://github.com/make-fe-great-again/gitlab-skill-workflow"
     echo ""

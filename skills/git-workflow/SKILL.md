@@ -29,11 +29,17 @@ Use when you need to:
 ### 1. Dependency Check
 
 First, I'll check if required tools are installed:
-- `git` - Required
-- `gh` - Required for GitHub repositories
-- `glab` - Required for GitLab repositories
+- `git` - Required for all operations
+- `gh` - Required for GitHub repositories (no push options alternative)
+- `glab` - Optional for GitLab (can use `git push -o` instead)
 
-If dependencies are missing, run:
+**Platform differences:**
+| Platform | CLI Tool | Required? | Alternative |
+|----------|----------|-----------|-------------|
+| GitHub | `gh` | Yes | None |
+| GitLab | `glab` | No | `git push -o` |
+
+If you need to install dependencies, run:
 ```bash
 bash scripts/setup.sh
 ```
@@ -94,7 +100,26 @@ gh pr create --title "$TITLE" --body "$BODY" --base $BASE
 gh pr edit $PR_NUMBER --body "$BODY"
 ```
 
-**For GitLab:**
+**For GitLab (Method 1 - Push Options, no glab required):**
+```bash
+# Create MR with push options (uses existing SSH/Git auth)
+git push -o merge_request.create \
+         -o merge_request.target=$BASE \
+         -o "merge_request.title=$TITLE" \
+         -o "merge_request.description=$BODY" \
+         origin $CURRENT_BRANCH
+
+# Available push options:
+# -o merge_request.create              - Create MR
+# -o merge_request.target=<branch>     - Set target branch
+# -o merge_request.title="<title>"     - Set MR title
+# -o merge_request.description="<desc>"- Set MR description
+# -o merge_request.draft               - Mark as draft
+# -o merge_request.merge_when_pipeline_succeeds - Auto-merge on CI pass
+# -o merge_request.remove_source_branch - Delete branch after merge
+```
+
+**For GitLab (Method 2 - glab CLI, more features):**
 ```bash
 # Check for existing MR
 glab mr list --source-branch $CURRENT_BRANCH
@@ -153,7 +178,7 @@ Support for platform-specific templates:
    gh auth login
    ```
 
-3. **GitLab CLI (glab)** - For GitLab repositories
+3. **GitLab CLI (glab)** - Optional for GitLab repositories
    ```bash
    # Check installation
    glab --version
@@ -169,6 +194,8 @@ Support for platform-specific templates:
    # Authenticate
    glab auth login
    ```
+
+   > **Note**: For GitLab, you can use `git push -o` instead of `glab` CLI. See [Create/Update PR or MR](#6-createupdate-pr-or-mr) section.
 
 ## Quick Start
 
@@ -247,21 +274,35 @@ Agent: [Loads git-workflow skill]
 - Authentication: `gh auth login`
 
 ### GitLab
-- Uses `glab` CLI for all operations
-- Supports GitLab CI/CD pipelines
-- MR templates should be in `.gitlab/merge_request_templates/default.md`
-- Authentication: `glab auth login`
+Two methods available for creating MRs:
+
+**Method 1: `git push -o` (no extra tools needed)**
+- Uses existing SSH/HTTPS authentication
+- One command for push + MR creation
+- Supported options: create, target, title, description, draft, auto-merge, etc.
+
+**Method 2: `glab` CLI (more features)**
+- Can manage MRs, view status, add comments, assign reviewers
+- Requires separate API authentication: `glab auth login`
+- Better for complex MR management workflows
+
+MR templates should be in `.gitlab/merge_request_templates/default.md`
 
 ### Custom GitLab Instances
 If using a self-hosted GitLab instance:
 ```bash
+# For glab CLI
 glab auth login --hostname gitlab.example.com
+
+# For git push -o (works automatically with SSH/HTTPS auth)
+git push -o merge_request.create origin $BRANCH
 ```
 
 ## Troubleshooting
 
 **Issue: gh/glab command not found**
 - Run `bash scripts/setup.sh` to install missing dependencies
+- For GitLab, you can use `git push -o` instead of `glab`
 
 **Issue: Authentication failed**
 - Ensure you're logged in: `gh auth status` or `glab auth status`
