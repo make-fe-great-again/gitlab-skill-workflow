@@ -39,6 +39,10 @@ log_verbose() {
     fi
 }
 
+log_step() {
+    echo -e "${COLOR_BLUE}▸${COLOR_RESET} $*"
+}
+
 # 显示帮助信息
 show_help() {
     cat << EOF
@@ -129,26 +133,24 @@ install_core_files() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    # 检查源文件是否存在
-    if [ ! -f "$script_dir/.opencode/skill/git-workflow/SKILL.md" ]; then
+    # 检查源文件是否存在 (Agent Skills 格式)
+    if [ ! -f "$script_dir/skills/git-workflow/SKILL.md" ]; then
         log_error "Source files not found in: $script_dir"
         log_info "Please ensure you're running install.sh from the gitlab-skill-workflow directory"
         exit 1
     fi
     
-    # 创建目录
+    # 创建目录 (默认安装到 .opencode/skill/)
     mkdir -p .opencode/skill/git-workflow
     mkdir -p scripts/lib
     
     # 复制 SKILL.md
-    copy_file "$script_dir/.opencode/skill/git-workflow/SKILL.md" \
+    copy_file "$script_dir/skills/git-workflow/SKILL.md" \
               ".opencode/skill/git-workflow/SKILL.md"
     
-    # 复制 setup.sh
-    copy_file "$script_dir/scripts/setup.sh" "scripts/setup.sh"
-    
-    # 复制 utils.sh
-    copy_file "$script_dir/scripts/lib/utils.sh" "scripts/lib/utils.sh"
+    # 复制 setup.sh 和 utils.sh
+    copy_file "$script_dir/skills/git-workflow/scripts/setup.sh" "scripts/setup.sh"
+    copy_file "$script_dir/skills/git-workflow/scripts/lib/utils.sh" "scripts/lib/utils.sh"
     
     # 设置可执行权限
     chmod +x scripts/setup.sh 2>/dev/null || true
@@ -184,6 +186,8 @@ ask_templates() {
     if [ "$has_github" = false ] && [ "$has_gitlab" = false ]; then
         # 两个目录都不存在，询问是否创建
         if ask_yes_no "Copy platform templates?" "y"; then
+            # 复制两个平台的模板
+            copy_templates "true" "true"
             return 0
         else
             return 1
@@ -280,10 +284,24 @@ copy_templates() {
     echo ""
 }
 
+# 检测是否为交互式终端
+is_interactive() {
+    [ -t 0 ]
+}
+
 # 是/否询问函数
 ask_yes_no() {
     local prompt="$1"
     local default="${2:-n}"
+    
+    # 非交互式环境直接返回默认值
+    if ! is_interactive; then
+        if [ "$default" = "y" ]; then
+            return 0
+        else
+            return 1
+        fi
+    fi
     
     local default_str
     if [ "$default" = "y" ]; then
@@ -293,7 +311,15 @@ ask_yes_no() {
     fi
     
     while true; do
-        read -p "$prompt $default_str: " response
+        read -t 30 -p "$prompt $default_str: " response || {
+            # 超时，使用默认值
+            echo ""
+            if [ "$default" = "y" ]; then
+                return 0
+            else
+                return 1
+            fi
+        }
         response="${response:-$default}"
         
         case "$response" in

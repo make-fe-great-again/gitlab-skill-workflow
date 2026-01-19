@@ -131,12 +131,9 @@ install_gh() {
             sudo $pkg_manager install -y gh
             ;;
         *)
-            log_warning "Unsupported package manager: $pkg_manager"
-            log_info "Falling back to manual installation with curl..."
-            # 下载并安装
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt update && sudo apt install -y gh
+            log_error "Unsupported package manager: $pkg_manager"
+            log_info "Please install GitHub CLI manually: https://cli.github.com/manual/installation"
+            return 1
             ;;
     esac
     
@@ -158,14 +155,45 @@ install_glab() {
     os=$(detect_os)
     
     if [ "$os" = "linux" ]; then
-        log_info "Downloading GitLab CLI for Linux..."
+        # 检测 CPU 架构
+        local arch
+        case "$(uname -m)" in
+            x86_64)  arch="amd64" ;;
+            aarch64|arm64) arch="arm64" ;;
+            armv7l)  arch="armv6" ;;
+            *)       arch="amd64" ;;
+        esac
+        
+        log_info "Downloading GitLab CLI for Linux ($arch)..."
         local tmp_file="/tmp/glab.tar.gz"
-        curl -sL "https://gitlab.com/api/v4/projects/43644822/packages/generic/glab/latest/linux_amd64.tar.gz" -o "$tmp_file"
+        local tmp_dir="/tmp/glab_extract"
+        
+        curl -sL "https://gitlab.com/api/v4/projects/43644822/packages/generic/glab/latest/linux_${arch}.tar.gz" -o "$tmp_file"
         
         if [ -f "$tmp_file" ]; then
-            tar -xzf "$tmp_file" -C /tmp
-            sudo mv /tmp/glab /usr/local/bin/
-            rm -f "$tmp_file"
+            # 清理并创建临时目录
+            rm -rf "$tmp_dir"
+            mkdir -p "$tmp_dir"
+            tar -xzf "$tmp_file" -C "$tmp_dir"
+            
+            # 查找 glab 可执行文件（可能在根目录或 bin 子目录）
+            local glab_bin
+            if [ -f "$tmp_dir/bin/glab" ]; then
+                glab_bin="$tmp_dir/bin/glab"
+            elif [ -f "$tmp_dir/glab" ]; then
+                glab_bin="$tmp_dir/glab"
+            else
+                # 递归查找
+                glab_bin=$(find "$tmp_dir" -name "glab" -type f -executable 2>/dev/null | head -1)
+            fi
+            
+            if [ -n "$glab_bin" ] && [ -f "$glab_bin" ]; then
+                sudo mv "$glab_bin" /usr/local/bin/
+                sudo chmod +x /usr/local/bin/glab
+            fi
+            
+            # 清理
+            rm -rf "$tmp_file" "$tmp_dir"
             
             if command_exists glab; then
                 log_success "GitLab CLI installed successfully: $(get_version glab)"
@@ -196,24 +224,13 @@ install_glab() {
     fi
 }
 
-# 显示安装选项
-show_install_menu() {
+# 显示缺失依赖信息
+show_missing_info() {
     local missing=("$@")
     
     separator "="
-    log_warning "Missing: ${missing[*]}"
+    log_warning "Missing dependencies: ${missing[*]}"
     separator "="
-    echo ""
-    
-    log_info "Choose an installation option:"
-    echo ""
-    echo "[1] Install all missing dependencies"
-    echo "[2] Install Git only"
-    echo "[3] Install GitHub CLI only"
-    echo "[4] Install GitLab CLI only"
-    echo "[5] Show manual installation commands"
-    echo "[6] Skip installation"
-    echo ""
 }
 
 # 显示手动安装命令
@@ -255,43 +272,110 @@ show_manual_install() {
     echo ""
 }
 
+# 检查 GitHub 认证状态
+check_gh_auth() {
+    if command_exists gh; then
+        gh auth status &>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# 检查 GitLab 认证状态
+check_glab_auth() {
+    if command_exists glab; then
+        glab auth status &>/dev/null
+        return $?
+    fi
+    return 1
+}
+
+# 检测平台类型
+detect_platform() {
+    local remote="$1"
+    
+    if [[ "$remote" == *"github.com"* ]]; then
+        echo "github"
+    elif [[ "$remote" == *"gitlab.com"* ]]; then
+        echo "gitlab"
+    elif [[ "$remote" == *"gitlab."* ]]; then
+        # 自托管 GitLab 实例 (gitlab.example.com)
+        echo "gitlab"
+    else
+        echo "unknown"
+    fi
+}
+
 # 引导用户认证
 guide_authentication() {
     separator "="
-    log_step "Authentication"
+    log_step "Authentication Status"
     separator "="
     echo ""
     
     local remote
     remote=$(get_active_remote)
+    local platform
+    platform=$(detect_platform "$remote")
     
-    if [[ "$remote" == *"github.com"* ]]; then
-        log_info "Detected GitHub repository"
-        echo ""
-        if command_exists gh; then
-            log_info "To authenticate with GitHub, run:"
-            echo "  gh auth login"
+    case "$platform" in
+        github)
+            log_info "Detected GitHub repository"
             echo ""
-        fi
-    elif [[ "$remote" == *"gitlab.com"* ]] || [[ "$remote" == *"git."* ]]; then
-        log_info "Detected GitLab repository"
-        echo ""
-        if command_exists glab; then
-            log_info "To authenticate with GitLab, run:"
-            echo "  glab auth login"
+            if command_exists gh; then
+                if check_gh_auth; then
+                    log_success "Already authenticated with GitHub"
+                else
+                    log_warning "Not authenticated with GitHub"
+                    echo "  Run: gh auth login"
+                fi
+            else
+                log_warning "GitHub CLI (gh) not installed"
+            fi
             echo ""
-        fi
-    else
-        log_info "Platform not detected from remote URL"
-        echo ""
-        if command_exists gh; then
-            echo "For GitHub: gh auth login"
-        fi
-        if command_exists glab; then
-            echo "For GitLab: glab auth login"
-        fi
-        echo ""
-    fi
+            ;;
+        gitlab)
+            log_info "Detected GitLab repository"
+            echo ""
+            if command_exists glab; then
+                if check_glab_auth; then
+                    log_success "Already authenticated with GitLab"
+                else
+                    log_warning "Not authenticated with GitLab"
+                    echo "  Run: glab auth login"
+                    # 检测是否为自托管实例
+                    if [[ "$remote" != *"gitlab.com"* ]]; then
+                        local hostname
+                        hostname=$(echo "$remote" | sed -E 's|.*@([^:/]+)[:/].*|\1|; s|.*://([^/]+)/.*|\1|')
+                        echo "  For self-hosted: glab auth login --hostname $hostname"
+                    fi
+                fi
+            else
+                log_warning "GitLab CLI (glab) not installed"
+            fi
+            echo ""
+            ;;
+        *)
+            log_info "Platform not detected from remote URL"
+            echo ""
+            # 显示两个平台的认证状态
+            if command_exists gh; then
+                if check_gh_auth; then
+                    log_success "GitHub: Authenticated"
+                else
+                    echo "  GitHub: gh auth login"
+                fi
+            fi
+            if command_exists glab; then
+                if check_glab_auth; then
+                    log_success "GitLab: Authenticated"
+                else
+                    echo "  GitLab: glab auth login"
+                fi
+            fi
+            echo ""
+            ;;
+    esac
 }
 
 # 显示完成信息
@@ -333,7 +417,7 @@ main() {
         exit 0
     fi
     
-    show_install_menu "${missing[@]}"
+    show_missing_info "${missing[@]}"
     
     ask_choice "What would you like to do?" \
         "Install all missing dependencies" \

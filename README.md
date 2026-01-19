@@ -15,14 +15,25 @@ Multi-platform Git workflow for GitHub and GitLab: review changes, generate comm
 
 ### 1. Install the Skill
 
-**Method 1: Clone and Install (Recommended)**
+**Method 1: Using add-skill (Recommended)** ⭐
+
+```bash
+npx add-skill make-fe-great-again/gitlab-skill-workflow
+```
+
+This works with multiple AI agents:
+- ✅ OpenCode
+- ✅ Cursor
+- ✅ Claude Code
+
+**Method 2: Clone and Install**
 ```bash
 git clone https://github.com/make-fe-great-again/gitlab-skill-workflow.git
 cd gitlab-skill-workflow
 bash install.sh
 ```
 
-**Method 2: Online Installation**
+**Method 3: Online Installation**
 ```bash
 curl -fsSL https://github.com/make-fe-great-again/gitlab-skill-workflow/raw/main/install.sh | bash
 ```
@@ -40,7 +51,7 @@ This will:
 
 ### 3. Use the Skill
 
-In OpenCode:
+In OpenCode/Cursor/Claude:
 ```
 skill({ name: "git-workflow" })
 ```
@@ -203,21 +214,45 @@ ${review_notes}
 
 ## Project Structure
 
-After installation, your project will have:
+### Repository Structure (Agent Skills Format)
+
+This repository follows the [Agent Skills](https://github.com/vercel-labs/agent-skills) specification:
+
+```
+gitlab-skill-workflow/
+├── skills/
+│   └── git-workflow/
+│       ├── SKILL.md              # Skill instructions
+│       └── scripts/
+│           ├── setup.sh          # Dependency setup
+│           └── lib/
+│               └── utils.sh      # Utility functions
+├── templates/
+│   ├── github/
+│   │   └── pull_request_template.md
+│   └── gitlab/
+│       └── merge_request_templates/
+│           └── default.md
+├── install.sh                    # Manual installation script
+└── README.md
+```
+
+### After Installation
+
+Your project will have:
 
 ```
 your-project/
-├── .opencode/
-│   └── skill/
-│       └── git-workflow/
-│           └── SKILL.md
+├── .opencode/skill/          # or .cursor/skills/ or .claude/skills/
+│   └── git-workflow/
+│       └── SKILL.md
 ├── scripts/
-│   ├── setup.sh              # Interactive dependency setup
+│   ├── setup.sh
 │   └── lib/
-│       └── utils.sh          # Utility functions
-├── .github/                 # Optional: GitHub templates
+│       └── utils.sh
+├── .github/                  # Optional: GitHub templates
 │   └── pull_request_template.md
-└── .gitlab/                 # Optional: GitLab templates
+└── .gitlab/                  # Optional: GitLab templates
     └── merge_request_templates/
         └── default.md
 ```
@@ -363,11 +398,16 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 - **GitHub**: https://github.com/make-fe-great-again/gitlab-skill-workflow
 - **Issues**: https://github.com/make-fe-great-again/gitlab-skill-workflow/issues
-- **Documentation**: See [.opencode/skill/git-workflow/SKILL.md](.opencode/skill/git-workflow/SKILL.md)
+- **Documentation**: See [skills/git-workflow/SKILL.md](skills/git-workflow/SKILL.md)
 
 ## Acknowledgments
 
-Built for [OpenCode](https://opencode.ai) - The open source AI coding agent.
+Built following the [Agent Skills](https://github.com/vercel-labs/agent-skills) specification.
+
+Compatible with:
+- [OpenCode](https://opencode.ai)
+- [Cursor](https://cursor.com)
+- [Claude Code](https://claude.ai)
 
 Inspired by best practices in:
 - Conventional Commits

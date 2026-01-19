@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.opencode/node_modules/
+
+# Package manager files
+*.lock
+bun.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# OpenCode local config (not needed in repo)
+.opencode/package.json
+.opencode/bun.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp files
+*.tmp
+*.temp
