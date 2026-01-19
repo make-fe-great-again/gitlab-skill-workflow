@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
-.opencode/node_modules/
+
+# Local skill installations (installed by add-skill or install.sh)
+.cursor/
+.opencode/
 
 # Package manager files
 *.lock
