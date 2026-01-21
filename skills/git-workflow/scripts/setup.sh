@@ -199,9 +199,9 @@ install_glab() {
                 return 1
             fi
         else
-            log_error "Homebrew is not installed"
-            log_info "Please install Homebrew first: https://brew.sh"
-            log_info "Then run: brew install glab"
+            log_warning "Homebrew is not installed, skipping glab installation"
+            log_info "MRs will be created with 'git push -o' (title only, no description)"
+            log_info "To install glab later: brew install glab (requires Homebrew)"
             return 1
         fi
     else

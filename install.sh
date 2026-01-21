@@ -345,17 +345,37 @@ show_completion() {
     
     log_info "The git-workflow skill has been installed."
     echo ""
+}
+
+# 运行 setup.sh 进行依赖安装和认证
+run_setup() {
+    if [ ! -f "scripts/setup.sh" ]; then
+        log_warning "scripts/setup.sh not found, skipping setup"
+        return 1
+    fi
     
-    log_step "Next steps:"
-    echo "  1. Run the setup script to check dependencies:"
-    echo "     ${COLOR_CYAN}bash scripts/setup.sh${COLOR_RESET}"
     echo ""
-    echo "  2. If needed, authenticate with your platform:"
-    echo "     • GitHub: ${COLOR_CYAN}gh auth login${COLOR_RESET}"
-    echo "     • GitLab: ${COLOR_CYAN}glab auth login${COLOR_RESET}"
+    log_info "Setup will check dependencies and guide you through authentication."
+    log_info "This is required for full MR template support on GitLab."
     echo ""
-    echo "  3. Use the skill:"
-    echo "     ${COLOR_CYAN}skill({ name: 'git-workflow' })${COLOR_RESET}"
+    
+    if ask_yes_no "Run setup now?" "y"; then
+        echo ""
+        bash scripts/setup.sh
+        return 0
+    else
+        echo ""
+        log_info "You can run setup later with:"
+        echo "  ${COLOR_CYAN}bash scripts/setup.sh${COLOR_RESET}"
+        echo ""
+        return 1
+    fi
+}
+
+# 显示使用说明
+show_usage() {
+    log_step "How to use:"
+    echo "  ${COLOR_CYAN}skill({ name: 'git-workflow' })${COLOR_RESET}"
     echo ""
     
     log_info "For more information, see:"
@@ -407,6 +427,12 @@ main() {
     fi
     
     show_completion
+    
+    # 询问是否运行 setup.sh 进行依赖安装和认证
+    run_setup
+    
+    # 显示使用说明
+    show_usage
 }
 
 # 运行主函数

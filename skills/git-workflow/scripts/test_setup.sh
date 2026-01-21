@@ -248,6 +248,55 @@ test_mr_creation_decision() {
 }
 
 # ============================================
+# 测试 7: glab 安装决策逻辑
+# ============================================
+test_glab_install_decision() {
+    test_start "glab Install Decision Logic"
+    
+    # 模拟安装决策逻辑
+    decide_install_method() {
+        local os="$1"
+        local has_snap="$2"
+        local has_brew="$3"
+        
+        if [[ "$os" == "linux" ]]; then
+            if [[ "$has_snap" == "true" ]]; then
+                echo "snap"
+            elif [[ "$has_brew" == "true" ]]; then
+                echo "brew"
+            else
+                echo "manual"
+            fi
+        elif [[ "$os" == "macos" ]]; then
+            if [[ "$has_brew" == "true" ]]; then
+                echo "brew"
+            else
+                echo "skip"  # macOS 没有 brew 直接跳过
+            fi
+        else
+            echo "unsupported"
+        fi
+    }
+    
+    # Linux 测试
+    result=$(decide_install_method "linux" "true" "false")
+    assert_equals "snap" "$result" "Linux with snap uses snap"
+    
+    result=$(decide_install_method "linux" "false" "true")
+    assert_equals "brew" "$result" "Linux without snap but with brew uses brew"
+    
+    result=$(decide_install_method "linux" "false" "false")
+    assert_equals "manual" "$result" "Linux without snap or brew shows manual"
+    
+    # macOS 测试
+    result=$(decide_install_method "macos" "false" "true")
+    assert_equals "brew" "$result" "macOS with brew uses brew"
+    
+    result=$(decide_install_method "macos" "false" "false")
+    assert_equals "skip" "$result" "macOS without brew skips (fallback to git push -o)"
+}
+
+# ============================================
 # 运行所有测试
 # ============================================
 main() {
@@ -262,6 +311,7 @@ main() {
     test_glab_auth_command
     test_utils
     test_mr_creation_decision
+    test_glab_install_decision
     
     echo ""
     echo "========================================"
