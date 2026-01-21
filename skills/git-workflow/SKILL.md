@@ -7,6 +7,16 @@ metadata:
   version: "1.0.0"
 ---
 
+## Post-Installation Setup (Required for GitLab)
+
+After installing this skill, run the setup script to install dependencies and authenticate:
+
+```bash
+bash scripts/setup.sh
+```
+
+> **Note**: Without this setup, GitLab MRs will only have a title (no description). The setup script will install `glab` CLI and guide you through authentication for full MR template support.
+
 ## What I do
 
 - **Review Changes**: Analyze code changes for quality, potential bugs, and improvements
