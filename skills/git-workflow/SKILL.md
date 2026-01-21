@@ -37,7 +37,13 @@ First, I'll check if required tools are installed:
 | Platform | CLI Tool | Required? | Alternative |
 |----------|----------|-----------|-------------|
 | GitHub | `gh` | Yes | None |
-| GitLab | `glab` | No | `git push -o` |
+| GitLab | `glab` | Recommended | `git push -o` (limited) |
+
+**Important GitLab limitation:**
+`git push -o` does NOT support multi-line descriptions due to Git's restriction:
+> fatal: push options must not have new line characters
+
+This means MR templates with checklists, sections, etc. **cannot** be used with `git push -o`. To use full MR templates, install and authenticate `glab` CLI via `bash scripts/setup.sh`.
 
 If you need to install dependencies, run:
 ```bash
@@ -100,35 +106,41 @@ gh pr create --title "$TITLE" --body "$BODY" --base $BASE
 gh pr edit $PR_NUMBER --body "$BODY"
 ```
 
-**For GitLab (Method 1 - Push Options, no glab required):**
-```bash
-# Create MR with push options (uses existing SSH/Git auth)
-git push -o merge_request.create \
-         -o merge_request.target=$BASE \
-         -o "merge_request.title=$TITLE" \
-         -o "merge_request.description=$BODY" \
-         origin $CURRENT_BRANCH
+**For GitLab:**
 
-# Available push options:
-# -o merge_request.create              - Create MR
-# -o merge_request.target=<branch>     - Set target branch
-# -o merge_request.title="<title>"     - Set MR title
-# -o merge_request.description="<desc>"- Set MR description
-# -o merge_request.draft               - Mark as draft
-# -o merge_request.merge_when_pipeline_succeeds - Auto-merge on CI pass
-# -o merge_request.remove_source_branch - Delete branch after merge
+First, check if glab is authenticated:
+```bash
+glab auth status
 ```
 
-**For GitLab (Method 2 - glab CLI, more features):**
+**If glab is authenticated (recommended):**
 ```bash
 # Check for existing MR
 glab mr list --source-branch $CURRENT_BRANCH
 
-# Create new MR
+# Create new MR with full template support
 glab mr create --title "$TITLE" --description "$BODY" --target-branch $BASE
 
 # Update existing MR
 glab mr edit $MR_NUMBER --description "$BODY"
+```
+
+**If glab is NOT authenticated (fallback):**
+```bash
+# Create MR with push options (title only, no multi-line description)
+git push -o merge_request.create \
+         -o merge_request.target=$BASE \
+         -o "merge_request.title=$TITLE" \
+         origin $CURRENT_BRANCH
+
+# Note: Description will be empty. User can edit in GitLab web UI.
+# Available push options:
+# -o merge_request.create              - Create MR
+# -o merge_request.target=<branch>     - Set target branch
+# -o merge_request.title="<title>"     - Set MR title
+# -o merge_request.draft               - Mark as draft
+# -o merge_request.merge_when_pipeline_succeeds - Auto-merge on CI pass
+# -o merge_request.remove_source_branch - Delete branch after merge
 ```
 
 ### 7. Custom Templates
@@ -142,6 +154,10 @@ Support for platform-specific templates:
 **GitLab** - Loads from:
 1. `.gitlab/merge_request_templates/default.md` (recommended)
 2. `.gitlab/mr-template.md`
+
+> **Note for GitLab users:**
+> - Full template support requires `glab` CLI (install via `bash scripts/setup.sh`)
+> - With `git push -o`, only the title will be set; template content will be skipped
 
 **Template Variables:**
 - `${title}` - PR/MR title
@@ -178,24 +194,34 @@ Support for platform-specific templates:
    gh auth login
    ```
 
-3. **GitLab CLI (glab)** - Optional for GitLab repositories
+3. **GitLab CLI (glab)** - Recommended for GitLab repositories (for full MR template support)
+   
+   Official repository: https://gitlab.com/gitlab-org/cli
+   
    ```bash
    # Check installation
    glab --version
    
-   # Install (Linux)
-   curl -sL https://gitlab.com/api/v4/projects/43644822/packages/generic/glab/latest/linux_amd64.tar.gz -o /tmp/glab.tar.gz
-   tar -xzf /tmp/glab.tar.gz -C /tmp
-   sudo mv /tmp/glab /usr/local/bin/
-   
    # Install (macOS)
    brew install glab
    
-   # Authenticate
-   glab auth login
+   # Install (Linux - Snap, recommended)
+   sudo snap install glab
+   
+   # Install (Linux - Homebrew)
+   brew install glab
+   
+   # Install (Windows)
+   winget install glab.glab
+   
+   # Authenticate (gitlab.com)
+   glab auth login --token <your_token>
+   
+   # Authenticate (self-hosted, e.g., jihulab.com)
+   glab auth login --hostname jihulab.com --token <your_token>
    ```
 
-   > **Note**: For GitLab, you can use `git push -o` instead of `glab` CLI. See [Create/Update PR or MR](#6-createupdate-pr-or-mr) section.
+   > **Note**: Without `glab`, MR descriptions will be empty (git push -o doesn't support multi-line content). Run `bash scripts/setup.sh` for guided installation and authentication.
 
 ## Quick Start
 
@@ -274,28 +300,34 @@ Agent: [Loads git-workflow skill]
 - Authentication: `gh auth login`
 
 ### GitLab
+
 Two methods available for creating MRs:
 
-**Method 1: `git push -o` (no extra tools needed)**
-- Uses existing SSH/HTTPS authentication
-- One command for push + MR creation
-- Supported options: create, target, title, description, draft, auto-merge, etc.
-
-**Method 2: `glab` CLI (more features)**
+**Method 1: `glab` CLI (recommended)**
+- Full MR template support (multi-line descriptions, checklists, etc.)
 - Can manage MRs, view status, add comments, assign reviewers
-- Requires separate API authentication: `glab auth login`
-- Better for complex MR management workflows
+- Requires API authentication via Personal Access Token
+- Run `bash scripts/setup.sh` for guided installation and authentication
+
+**Method 2: `git push -o` (fallback)**
+- Uses existing SSH/HTTPS authentication
+- No extra tools needed
+- **Limitation**: Does NOT support multi-line descriptions
+- MR will be created with title only; description must be added manually in GitLab web UI
 
 MR templates should be in `.gitlab/merge_request_templates/default.md`
 
-### Custom GitLab Instances
-If using a self-hosted GitLab instance:
-```bash
-# For glab CLI
-glab auth login --hostname gitlab.example.com
+### Supported GitLab Instances
 
-# For git push -o (works automatically with SSH/HTTPS auth)
-git push -o merge_request.create origin $BRANCH
+| Instance Type | Hostname Example | Auth Command |
+|--------------|------------------|--------------|
+| GitLab.com | gitlab.com | `glab auth login --token <token>` |
+| JiHu GitLab | jihulab.com | `glab auth login --hostname jihulab.com --token <token>` |
+| Self-hosted | gitlab-ee.example.com | `glab auth login --hostname gitlab-ee.example.com --token <token>` |
+
+Token creation URL (auto-selects required scopes):
+```
+https://<hostname>/-/user_settings/personal_access_tokens?scopes=api,write_repository
 ```
 
 ## Troubleshooting

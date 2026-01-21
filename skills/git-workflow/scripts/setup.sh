@@ -148,6 +148,7 @@ install_gh() {
 }
 
 # 安装 GitLab CLI
+# 官方仓库: https://gitlab.com/gitlab-org/cli
 install_glab() {
     log_step "Installing GitLab CLI..."
     
@@ -155,45 +156,40 @@ install_glab() {
     os=$(detect_os)
     
     if [ "$os" = "linux" ]; then
-        # 检测 CPU 架构
-        local arch
-        case "$(uname -m)" in
-            x86_64)  arch="amd64" ;;
-            aarch64|arm64) arch="arm64" ;;
-            armv7l)  arch="armv6" ;;
-            *)       arch="amd64" ;;
-        esac
-        
-        log_info "Downloading GitLab CLI for Linux ($arch)..."
-        local tmp_file="/tmp/glab.tar.gz"
-        local tmp_dir="/tmp/glab_extract"
-        
-        curl -sL "https://gitlab.com/api/v4/projects/43644822/packages/generic/glab/latest/linux_${arch}.tar.gz" -o "$tmp_file"
-        
-        if [ -f "$tmp_file" ]; then
-            # 清理并创建临时目录
-            rm -rf "$tmp_dir"
-            mkdir -p "$tmp_dir"
-            tar -xzf "$tmp_file" -C "$tmp_dir"
+        # 优先使用 snap (官方推荐)
+        if command_exists snap; then
+            log_info "Using Snap to install GitLab CLI (official)..."
+            sudo snap install glab
             
-            # 查找 glab 可执行文件（可能在根目录或 bin 子目录）
-            local glab_bin
-            if [ -f "$tmp_dir/bin/glab" ]; then
-                glab_bin="$tmp_dir/bin/glab"
-            elif [ -f "$tmp_dir/glab" ]; then
-                glab_bin="$tmp_dir/glab"
-            else
-                # 递归查找
-                glab_bin=$(find "$tmp_dir" -name "glab" -type f -executable 2>/dev/null | head -1)
+            if command_exists glab; then
+                log_success "GitLab CLI installed successfully: $(get_version glab)"
+                return 0
             fi
+        fi
+        
+        # 备选: 使用 Homebrew
+        if command_exists brew; then
+            log_info "Using Homebrew to install GitLab CLI..."
+            brew install glab
             
-            if [ -n "$glab_bin" ] && [ -f "$glab_bin" ]; then
-                sudo mv "$glab_bin" /usr/local/bin/
-                sudo chmod +x /usr/local/bin/glab
+            if command_exists glab; then
+                log_success "GitLab CLI installed successfully: $(get_version glab)"
+                return 0
             fi
-            
-            # 清理
-            rm -rf "$tmp_file" "$tmp_dir"
+        fi
+        
+        # 都不可用时，提示手动安装
+        log_error "Neither snap nor brew is available"
+        log_info "Please install GitLab CLI manually:"
+        echo "  Option 1: sudo snap install glab"
+        echo "  Option 2: brew install glab"
+        echo "  Option 3: Download from https://gitlab.com/gitlab-org/cli/-/releases"
+        return 1
+        
+    elif [ "$os" = "macos" ]; then
+        if command_exists brew; then
+            log_info "Using Homebrew to install GitLab CLI..."
+            brew install glab
             
             if command_exists glab; then
                 log_success "GitLab CLI installed successfully: $(get_version glab)"
@@ -203,23 +199,14 @@ install_glab() {
                 return 1
             fi
         else
-            log_error "Failed to download GitLab CLI"
-            return 1
-        fi
-    elif [ "$os" = "macos" ]; then
-        log_info "Using Homebrew to install GitLab CLI..."
-        brew install glab
-        
-        if command_exists glab; then
-            log_success "GitLab CLI installed successfully: $(get_version glab)"
-            return 0
-        else
-            log_error "GitLab CLI installation failed"
+            log_error "Homebrew is not installed"
+            log_info "Please install Homebrew first: https://brew.sh"
+            log_info "Then run: brew install glab"
             return 1
         fi
     else
         log_error "Unsupported operating system: $os"
-        log_info "Please install GitLab CLI manually: https://glab.readthedocs.io/en/latest/install"
+        log_info "Please install GitLab CLI manually: https://gitlab.com/gitlab-org/cli/-/releases"
         return 1
     fi
 }
@@ -377,6 +364,45 @@ guide_github_auth() {
     echo ""
 }
 
+# 执行 glab 认证
+do_glab_auth() {
+    local hostname="$1"
+    local token_url="https://${hostname}/-/user_settings/personal_access_tokens?scopes=api,write_repository"
+    
+    log_step "GitLab Authentication"
+    echo ""
+    log_info "To authenticate, you need a Personal Access Token."
+    echo ""
+    log_info "Create token at (scopes will be pre-selected):"
+    echo "  $token_url"
+    echo ""
+    log_info "Required scopes: api, write_repository"
+    echo ""
+    
+    read -p "Enter your Personal Access Token: " token
+    echo ""
+    
+    if [ -z "$token" ]; then
+        log_warning "No token provided. Skipping authentication."
+        return 1
+    fi
+    
+    log_info "Authenticating with $hostname..."
+    if [[ "$hostname" == "gitlab.com" ]]; then
+        glab auth login --token "$token"
+    else
+        glab auth login --hostname "$hostname" --token "$token"
+    fi
+    
+    if check_glab_auth; then
+        log_success "GitLab authentication successful!"
+        return 0
+    else
+        log_error "Authentication failed. Please check your token."
+        return 1
+    fi
+}
+
 # 引导 GitLab 认证
 guide_gitlab_auth() {
     local remote="$1"
@@ -391,77 +417,71 @@ guide_gitlab_auth() {
     fi
     echo ""
     
-    # GitLab 有 git push -o 替代方案，所以即使没有 glab 也可以
+    # glab 未安装时，询问是否安装
     if ! command_exists glab; then
-        log_info "GitLab CLI (glab) not installed"
+        log_warning "GitLab CLI (glab) not installed"
+        log_warning "Without glab, MR descriptions will be empty (git push -o doesn't support multi-line content)"
         echo ""
-        log_info "You can create MRs without glab using git push options:"
-        echo "  git push -o merge_request.create -o merge_request.target=main origin BRANCH"
+        
+        ask_choice "Do you want to install glab for full MR template support?" \
+            "Yes, install glab (recommended)" \
+            "No, use git push -o (title only)"
+        
+        local choice=$?
         echo ""
-        log_info "Or create MRs manually in browser:"
-        echo "  $repo_url/-/merge_requests/new"
-        echo ""
-        return
+        
+        case $choice in
+            1)
+                install_glab
+                if ! command_exists glab; then
+                    log_warning "glab installation failed. Falling back to git push -o."
+                    echo ""
+                    log_info "You can create MRs with push options (title only):"
+                    echo "  git push -o merge_request.create -o merge_request.target=main origin BRANCH"
+                    return
+                fi
+                # 安装成功后继续认证流程
+                ;;
+            2)
+                log_info "Using git push -o for MR creation (title only, no description)."
+                echo ""
+                log_info "To create MRs with push options:"
+                echo "  git push -o merge_request.create \\"
+                echo "           -o merge_request.target=main \\"
+                echo "           -o \"merge_request.title=Your MR Title\" \\"
+                echo "           origin BRANCH_NAME"
+                echo ""
+                log_warning "Note: MR description will be empty. You can edit it in GitLab web UI."
+                return
+                ;;
+        esac
     fi
     
+    # glab 已安装，检查认证状态
     if check_glab_auth; then
         log_success "Already authenticated with GitLab"
         echo ""
         return
     fi
     
-    log_warning "Not authenticated with GitLab"
+    # 需要认证
+    log_warning "glab is installed but not authenticated"
     echo ""
     
-    ask_choice "How would you like to create Merge Requests?" \
-        "Login with glab CLI (full features)" \
-        "Use git push -o (no auth needed)" \
-        "Create MRs manually in browser" \
-        "Skip for now"
+    ask_choice "Do you want to authenticate now?" \
+        "Yes, authenticate with Personal Access Token" \
+        "Skip for now (use git push -o instead)"
     
     local choice=$?
     echo ""
     
     case $choice in
         1)
-            log_step "Starting GitLab authentication..."
-            if [[ "$hostname" != "gitlab.com" ]]; then
-                glab auth login --hostname "$hostname"
-            else
-                glab auth login
-            fi
-            if check_glab_auth; then
-                log_success "GitLab authentication successful!"
-            else
-                log_warning "Authentication was not completed"
-                log_info "You can run 'glab auth login' later"
-            fi
+            do_glab_auth "$hostname"
             ;;
         2)
-            log_success "Great choice! No additional setup needed."
-            echo ""
-            log_info "To create MRs with push options:"
-            echo "  git push -o merge_request.create \\"
-            echo "           -o merge_request.target=main \\"
-            echo "           -o \"merge_request.title=Your MR Title\" \\"
-            echo "           origin BRANCH_NAME"
-            echo ""
-            log_info "Available options:"
-            echo "  -o merge_request.create              - Create MR"
-            echo "  -o merge_request.target=<branch>     - Target branch"
-            echo "  -o merge_request.title=\"<title>\"     - MR title"
-            echo "  -o merge_request.description=\"<desc>\"- MR description"
-            echo "  -o merge_request.draft               - Mark as draft"
-            echo "  -o merge_request.merge_when_pipeline_succeeds"
-            echo "  -o merge_request.remove_source_branch"
-            ;;
-        3)
-            log_info "To create MRs manually:"
-            echo "  1. Push your branch: git push origin BRANCH_NAME"
-            echo "  2. Visit: $repo_url/-/merge_requests/new"
-            ;;
-        4)
-            log_info "Skipped. You can use 'git push -o' or 'glab auth login' later"
+            log_info "Skipped. You can run 'glab auth login' later."
+            log_info "Without authentication, MRs will be created with title only (no description)."
             ;;
     esac
     echo ""
